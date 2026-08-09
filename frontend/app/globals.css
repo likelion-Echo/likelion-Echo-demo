@@ -65,6 +65,14 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* 포커스 신호는 링크 블루가 맡는다 (DESIGN.md §2).
+   마우스 클릭에는 뜨지 않고 키보드 이동에만 뜬다. */
+:focus-visible {
+  outline: 2px solid var(--color-link);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
 /* ── 타이포 위계 — 큰 크기일수록 자간을 더 당긴다 (DESIGN.md §3) ── */
 .t-display { font-size: 44px; font-weight: 700; line-height: 1.1; letter-spacing: -1.2px; color: var(--color-ink); }
 .t-h1 { font-size: 30px; font-weight: 700; line-height: 1.2; letter-spacing: -0.7px; color: var(--color-ink); }
@@ -133,7 +141,8 @@ body {
   font-size: 16px;
 }
 .input::placeholder { color: var(--color-ink-faint); }
-.input:focus { outline: 2px solid var(--color-link); outline-offset: -1px; border-color: transparent; }
+.input:focus,
+.input:focus-visible { outline: 2px solid var(--color-link); outline-offset: -1px; border-color: transparent; }
 
 /* 쓰는 순간부터 읽히는 형태로 보여야 한다 */
 .input-read { font-family: var(--font-read); font-size: 18px; line-height: 1.8; }
@@ -178,6 +187,23 @@ body {
   font-size: 15px;
   line-height: 1.8;
   color: var(--color-ink-secondary);
+}
+
+/* 위기 신호 안내 (SAFE-03). 고인의 말이 아니라 시스템의 말이므로 세리프를 쓰지 않는다.
+   경고색으로 놀라게 하지 않되, 점선 안내보다는 분명한 존재감을 준다. */
+.crisis-notice {
+  background: var(--color-sunken);
+  border-left: 4px solid var(--color-ink-muted);
+  border-radius: var(--radius-sm);
+  padding: 16px 18px;
+  color: var(--color-ink-secondary);
+  font-size: 15px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+.crisis-notice strong {
+  color: var(--color-ink);
+  font-weight: 600;
 }
 
 /* 실패가 아니라 시스템이 지켜낸 약속이다. 빨강을 쓰지 않는다. */

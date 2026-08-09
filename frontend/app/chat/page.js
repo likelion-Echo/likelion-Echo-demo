@@ -46,6 +46,7 @@ function Chat() {
           role: "assistant",
           content: data.answer,
           grounded: data.grounded,
+          kind: data.kind,
           sources: data.sources,
         },
       ]);
@@ -69,13 +70,28 @@ function Chat() {
           <p className="t-meta mt-20 text-center">하고 싶었던 말을 건네보세요.</p>
         )}
 
-        {messages.map((m, i) => (
+        {messages.map((m, i) => {
+          // 답변의 성격은 서버가 kind로 알려준다.
+          //   crisis    — 위기 신호를 감지해 LLM을 거치지 않고 돌려준 상담 안내 (SAFE-03)
+          //   no_record — 관련 기록이 없어 LLM을 거치지 않고 돌려준 고정 문구 (SAFE-01)
+          //   normal    — 페르소나가 실제로 생성한 답변
+          // 앞의 둘은 고인의 말이 아니라 시스템의 말이므로 세리프 말풍선을 쓰지 않는다.
+          const kind = m.role === "assistant" ? m.kind || "normal" : "normal";
+          // 답변은 생성됐는데 어떤 기록에도 연결되지 않은 경우. 위 둘과 전혀 다른 상황이다.
+          const unlinked = m.role === "assistant" && !m.grounded && kind === "normal";
+
+          return (
           <div key={i}>
             {m.role === "user" ? (
               <div className="bubble-user ml-auto max-w-[80%]">{m.content}</div>
+            ) : kind === "crisis" ? (
+              <div role="alert" className="crisis-notice max-w-[85%]">
+                {m.content}
+              </div>
+            ) : kind === "no_record" ? (
+              <div className="ungrounded-notice max-w-[85%]">{m.content}</div>
             ) : (
-              /* Echo의 답변은 사람의 말이므로 세리프 18/1.8.
-                 근거가 없을 때의 고정 문구는 서버가 이미 담아 보내므로 그대로 렌더한다 (SAFE-01) */
+              /* Echo의 답변은 사람의 말이므로 세리프 18/1.8 */
               <div className="bubble-echo max-w-[85%]">{m.content}</div>
             )}
 
@@ -84,7 +100,8 @@ function Chat() {
               <div className="reveal-late mt-2 max-w-[85%] space-y-2">
                 {m.sources.map((s) => (
                   <div key={s.memory_id} className="citation">
-                    <p className="t-caption-sm">이 말은 여기서 나왔어요</p>
+                    {/* 크림 배경 위에서는 ink-faint의 대비가 2.5:1까지 떨어진다. ink-muted를 쓴다. */}
+                    <p className="text-[12px] leading-[1.35] text-ink-muted">이 말은 여기서 나왔어요</p>
                     <p className="t-caption mt-1 flex items-center gap-1.5 font-semibold text-ink-secondary">
                       <TypeIcon type={s.memory_type} />
                       {s.title}
@@ -98,17 +115,22 @@ function Chat() {
               </div>
             )}
 
-            {/* 오류가 아니라 시스템이 지켜낸 약속이다. 빨강을 쓰지 않는다. */}
-            {m.role === "assistant" && !m.grounded && (
-              <div className="reveal-late ungrounded-notice mt-2 max-w-[85%]">
-                남겨진 기록에서 근거를 찾지 못해, 없는 말을 지어내지 않았어요.
-              </div>
+            {/* 답변은 나왔지만 어떤 기록에도 연결되지 않았다는 사실을 숨기지 않는다 (NFR-03) */}
+            {unlinked && (
+              <p className="reveal-late t-caption mt-2 max-w-[85%] text-ungrounded">
+                이 답변은 특정 기록에 연결되지 않았어요.
+              </p>
             )}
           </div>
-        ))}
+          );
+        })}
 
         {loading && (
-          <div className="bubble-echo inline-flex max-w-[85%] items-center gap-1.5 py-4">
+          <div
+            role="status"
+            aria-label="Echo가 기록을 찾아보고 있어요"
+            className="bubble-echo inline-flex max-w-[85%] items-center gap-1.5 py-4"
+          >
             <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-ink-faint" />
             <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-ink-faint [animation-delay:200ms]" />
             <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-ink-faint [animation-delay:400ms]" />

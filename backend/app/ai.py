@@ -131,6 +131,8 @@ CITATION_RULE = """
 - answer 에는 인사말이나 JSON 설명 없이 답변 본문만 담는다.
 - used_memory_ids 에는 위 [관련 기록]에 있는 id 중 실제로 답변의 근거가 된 것만 넣는다.
 - 어느 기록도 근거가 되지 않았다면 빈 배열을 넣는다.
+- 앞선 대화에서 이미 비슷한 말에 답한 적이 있다면 같은 문장을 되풀이하지 않는다.
+  다른 기록을 근거로 삼거나, 앞서 하지 않은 이야기를 꺼낸다.
 """
 
 
@@ -145,6 +147,11 @@ def chat_reply(
     res = client().chat.completions.create(
         model=CHAT_MODEL,
         response_format={"type": "json_object"},
+        # 대화 이력을 같이 넣기 때문에, 같은 말을 두 번 보내면 모델이 바로 위의 자기 답을
+        # 그대로 베낀다. 페널티로 직전 답변의 어휘를 다시 고르는 것을 억제한다.
+        # 값이 크면 페르소나 특유의 말투까지 흐려지므로 낮게 잡는다.
+        presence_penalty=0.4,
+        frequency_penalty=0.3,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "system", "content": f"[관련 기록]\n{context}\n{CITATION_RULE}"},
@@ -159,8 +166,11 @@ def chat_reply(
         data = json.loads(raw)
         answer = str(data["answer"]).strip()
     except (json.JSONDecodeError, KeyError, TypeError):
-        # 형식이 깨지면 원문을 그대로 보여주고, 검색된 기록 전체를 근거로 표시한다.
-        return raw, sorted(allowed)
+        # 형식이 깨지면 답변만 살리고 근거는 비운다.
+        # 검색된 기록 전체를 근거로 붙이면 "실제로 참고한 것"이 아니라 "검색된 것"을 보여주게 되어
+        # 원본 추적성(NFR-03)이 거짓이 된다. 모델이 인용을 안 준 경우와 같은 상황이므로
+        # used_memory_ids가 빈 배열일 때와 동일하게 처리한다.
+        return raw, []
 
     used = []
     for value in data.get("used_memory_ids") or []:

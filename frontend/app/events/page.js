@@ -118,7 +118,7 @@ export default function Events() {
                       type="checkbox"
                       checked={on}
                       onChange={() => toggleMemory(m.memory_id)}
-                      className="accent-[#3d3d3d]"
+                      className="h-4 w-4 accent-charcoal"
                     />
                     <TypeIcon type={m.memory_type} className="text-ink-faint" />
                     <span className="text-sm text-ink-secondary">{m.title}</span>

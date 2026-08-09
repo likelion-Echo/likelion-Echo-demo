@@ -17,6 +17,9 @@ backend/storage/
 node_modules/
 .next/
 
+# 에디터 / 도구 로컬 설정
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db

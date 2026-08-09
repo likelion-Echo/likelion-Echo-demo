@@ -42,8 +42,8 @@ export default function PersonaPage() {
   // 10~20초 걸린다. 진행률 바를 두지 않는다 — 예측할 수 없기 때문이다. (DESIGN.md §8)
   if (loading)
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
-        <div className="spinner" />
+      <div role="status" className="flex min-h-[60vh] flex-col items-center justify-center text-center">
+        <div className="spinner" aria-hidden="true" />
         <p className="prose-read mt-8 text-[20px]">Echo가 당신을 이해하는 중이에요.</p>
         <p className="t-caption mt-3 text-ink-faint">남기신 기록을 하나씩 읽고 있어요</p>
       </div>

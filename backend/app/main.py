@@ -47,6 +47,39 @@ ALLOWED_AUDIO_EXT = {".mp3", ".m4a", ".wav", ".webm", ".mp4", ".mpeg", ".mpga", 
 # 관련 기록이 없을 때 LLM을 거치지 않고 그대로 돌려주는 문구 (SAFE-01)
 NO_RECORD_MESSAGE = "이 내용에 대해서는 남겨진 기록이 없습니다."
 
+# ---------- 위기 신호 예외 처리 (SAFE-03) ----------
+# 이 서비스의 사용자는 사별을 겪은 사람이다. 자살 사고를 드러내는 말이 들어올 수 있고,
+# 그 순간 고인의 페르소나가 즉흥으로 답하게 두면 안 된다.
+# SAFE-01과 같은 방식으로, LLM을 호출하지 않고 고정 문구를 돌려준다.
+#
+# 키워드는 .env의 CRISIS_KEYWORDS에서 콤마로 구분해 넣는다.
+# 비교 전에 양쪽 공백을 모두 제거하므로 "죽고 싶다"와 "죽고싶다"가 함께 걸린다.
+_DEFAULT_CRISIS_KEYWORDS = (
+    "자살,죽고싶,죽고싶다,죽을래,죽을거야,죽어버리,따라죽,같이죽,"
+    "목숨을끊,목숨끊,스스로목숨,극단적선택,자해,살기싫,살고싶지않,"
+    "사라지고싶,없어지고싶,뛰어내리,유서"
+)
+CRISIS_KEYWORDS = [
+    k.strip().replace(" ", "")
+    for k in os.getenv("CRISIS_KEYWORDS", _DEFAULT_CRISIS_KEYWORDS).split(",")
+    if k.strip()
+]
+
+# 상담 창구는 지역·시점에 따라 바뀔 수 있으므로 .env에서 덮어쓸 수 있게 둔다.
+CRISIS_MESSAGE = os.getenv(
+    "CRISIS_MESSAGE",
+    "지금 많이 힘드신 것 같아요.\n"
+    "이 이야기만큼은 Echo가 아니라 사람과 나누셨으면 합니다.\n\n"
+    "자살예방 상담전화 109 (24시간)\n"
+    "정신건강 상담전화 1577-0199",
+)
+
+
+def is_crisis(message: str) -> bool:
+    """위기 신호로 볼 만한 표현이 들어 있는지 본다. 놓치는 것보다 넘치게 잡는 쪽이 낫다."""
+    flat = message.replace(" ", "")
+    return any(k in flat for k in CRISIS_KEYWORDS)
+
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
 
 # 같은 와이파이의 다른 기기에서 붙을 때 IP가 매번 바뀌므로, 사설망 대역은 정규식으로 열어둔다.
@@ -527,11 +560,23 @@ def source_out(m: Memory) -> dict:
     }
 
 
+def message_kind(content: str) -> str:
+    """화면이 말풍선/안내를 가려 그리도록 답변의 성격을 알려준다.
+    고정 문구는 서버가 만든 것이므로 내용만으로 판별할 수 있다.
+    (컬럼을 늘리면 마이그레이션이 필요해 기존 데이터가 날아간다.)"""
+    if content == CRISIS_MESSAGE:
+        return "crisis"
+    if content == NO_RECORD_MESSAGE:
+        return "no_record"
+    return "normal"
+
+
 def message_out(m: ChatMessage, titles: dict[int, Memory]) -> dict:
     return {
         "role": m.role,
         "content": m.content,
         "grounded": m.grounded,
+        "kind": message_kind(m.content) if m.role == "assistant" else "normal",
         "sources": [source_out(titles[mid]) for mid in (m.cited_memory_ids or []) if mid in titles],
     }
 
@@ -549,11 +594,28 @@ def chat(body: ChatIn, user: User = Depends(get_current_user), db: Session = Dep
         raise HTTPException(422, "메시지를 입력해주세요.")
 
     author, event = resolve_chat_target(db, user, body.event_id)
+    chat_row = get_or_create_chat(db, author, user, event)
+
+    # 위기 신호는 무엇보다 먼저 본다 (SAFE-03).
+    # 페르소나가 없어서 막히는 것보다 안내가 먼저 나가는 것이 중요하므로 persona 검사보다 앞에 둔다.
+    if is_crisis(body.message):
+        db.add(ChatMessage(chat_id=chat_row.chat_id, role="user", content=body.message))
+        db.add(
+            ChatMessage(
+                chat_id=chat_row.chat_id,
+                role="assistant",
+                content=CRISIS_MESSAGE,
+                cited_memory_ids=[],
+                grounded=False,
+            )
+        )
+        db.commit()
+        return {"answer": CRISIS_MESSAGE, "grounded": False, "kind": "crisis", "sources": []}
+
     persona = db.scalar(select(Persona).where(Persona.user_id == author.user_id))
     if not persona:
         raise HTTPException(422, "먼저 페르소나를 생성해주세요.")
 
-    chat_row = get_or_create_chat(db, author, user, event)
     # 대화 이력은 서버에 저장된 것만 쓴다. 클라이언트가 보낸 이력을 그대로 LLM에 넣으면
     # role을 위조해 시스템 규칙을 덮어쓸 수 있다.
     history = [
@@ -595,6 +657,7 @@ def chat(body: ChatIn, user: User = Depends(get_current_user), db: Session = Dep
     return {
         "answer": answer,
         "grounded": bool(used),
+        "kind": message_kind(answer),
         "sources": [source_out(by_id[mid]) for mid in used if mid in by_id],
     }
 
