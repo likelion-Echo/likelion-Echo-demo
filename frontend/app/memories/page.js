@@ -2,29 +2,57 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { api, TYPE_ICON, TYPE_LABEL } from "@/lib/api";
+import { api, apiBlobUrl, TYPE_ICON, TYPE_LABEL } from "@/lib/api";
 
 const FILTERS = [
   ["all", "전체"],
-  ["diary", "일기"],
+  ["voice", "음성"],
   ["letter", "편지"],
+  ["diary", "일기"],
   ["memo", "메모"],
 ];
+
+const STATUS_LABEL = {
+  PENDING: "음성을 텍스트로 변환하는 중입니다...",
+  FAILED: "음성 변환에 실패했습니다. 이 기록은 검색 근거로 쓰이지 않습니다.",
+};
+
+function AudioPlayer({ memoryId }) {
+  const [url, setUrl] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let objectUrl;
+    apiBlobUrl(`/memories/${memoryId}/audio`)
+      .then((u) => {
+        objectUrl = u;
+        setUrl(u);
+      })
+      .catch((err) => setError(err.message));
+    return () => objectUrl && URL.revokeObjectURL(objectUrl);
+  }, [memoryId]);
+
+  if (error) return <p className="text-xs text-red-500">{error}</p>;
+  if (!url) return <p className="text-xs text-stone-400">음성을 불러오는 중...</p>;
+  return <audio controls src={url} className="w-full" />;
+}
 
 export default function Memories() {
   const [memories, setMemories] = useState([]);
   const [filter, setFilter] = useState("all");
-  const [selected, setSelected] = useState(null);
+  const [openId, setOpenId] = useState(null);
 
   useEffect(() => {
-    api("/memories").then(setMemories).catch(() => {});
+    api("/memories")
+      .then((rows) => setMemories(rows || []))
+      .catch(() => {});
   }, []);
 
   async function remove(id) {
     if (!confirm("이 기록을 삭제할까요? AI 답변 검색에서도 제외됩니다.")) return;
     await api(`/memories/${id}`, { method: "DELETE" });
     setMemories(memories.filter((m) => m.memory_id !== id));
-    setSelected(null);
+    setOpenId(null);
   }
 
   const shown = filter === "all" ? memories : memories.filter((m) => m.memory_type === filter);
@@ -38,7 +66,7 @@ export default function Memories() {
         </Link>
       </div>
 
-      <div className="mt-4 flex gap-2 text-sm">
+      <div className="mt-4 flex flex-wrap gap-2 text-sm">
         {FILTERS.map(([key, label]) => (
           <button
             key={key}
@@ -55,32 +83,47 @@ export default function Memories() {
       <div className="mt-6 space-y-3">
         {shown.length === 0 && <p className="py-10 text-center text-stone-400">아직 기록이 없습니다.</p>}
         {shown.map((m) => (
-          <button
-            key={m.memory_id}
-            onClick={() => setSelected(selected?.memory_id === m.memory_id ? null : m)}
-            className="block w-full rounded-xl border border-stone-200 bg-white p-4 text-left hover:border-stone-400"
-          >
-            <p className="text-xs text-stone-400">{m.created_at.slice(0, 10).replaceAll("-", ".")}</p>
-            <p className="mt-1 font-medium">{m.title}</p>
-            <p className="mt-1 text-sm text-stone-500">
-              {TYPE_ICON[m.memory_type] || "📄"} {TYPE_LABEL[m.memory_type] || m.memory_type}
-              {m.related_person && ` · ${m.related_person}`}
-            </p>
-            {selected?.memory_id === m.memory_id && (
-              <div className="mt-3 border-t border-stone-100 pt-3">
-                <p className="whitespace-pre-wrap text-sm text-stone-700">{m.content}</p>
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    remove(m.memory_id);
-                  }}
-                  className="mt-3 inline-block cursor-pointer text-xs text-red-500 hover:underline"
+          <div key={m.memory_id} className="rounded-xl border border-stone-200 bg-white">
+            <button
+              onClick={() => setOpenId(openId === m.memory_id ? null : m.memory_id)}
+              className="block w-full p-4 text-left hover:bg-stone-50"
+            >
+              <p className="text-xs text-stone-400">{m.created_at.slice(0, 10).replaceAll("-", ".")}</p>
+              <p className="mt-1 font-medium">{m.title}</p>
+              <p className="mt-1 text-sm text-stone-500">
+                {TYPE_ICON[m.memory_type] || "📄"} {TYPE_LABEL[m.memory_type] || m.memory_type}
+                {m.related_person && ` · ${m.related_person}`}
+              </p>
+              {STATUS_LABEL[m.transcript_status] && (
+                <p
+                  className={`mt-1 text-xs ${
+                    m.transcript_status === "FAILED" ? "text-red-500" : "text-amber-700"
+                  }`}
+                >
+                  {STATUS_LABEL[m.transcript_status]}
+                </p>
+              )}
+            </button>
+
+            {openId === m.memory_id && (
+              <div className="border-t border-stone-100 px-4 pb-4 pt-3">
+                {m.has_audio && (
+                  <div className="mb-3">
+                    <AudioPlayer memoryId={m.memory_id} />
+                  </div>
+                )}
+                <p className="whitespace-pre-wrap text-sm text-stone-700">
+                  {m.content || "(내용 없음)"}
+                </p>
+                <button
+                  onClick={() => remove(m.memory_id)}
+                  className="mt-3 text-xs text-red-500 hover:underline"
                 >
                   삭제
-                </span>
+                </button>
               </div>
             )}
-          </button>
+          </div>
         ))}
       </div>
     </div>

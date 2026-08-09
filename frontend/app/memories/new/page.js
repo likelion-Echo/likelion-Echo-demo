@@ -2,29 +2,40 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { api } from "@/lib/api";
+import { apiForm } from "@/lib/api";
 
 const TYPES = [
   ["diary", "📖 일기"],
   ["letter", "💌 편지"],
   ["memo", "📝 메모"],
+  ["voice", "🎤 음성"],
 ];
 
 export default function NewMemory() {
   const router = useRouter();
   const [form, setForm] = useState({ title: "", content: "", memory_type: "letter", related_person: "" });
+  const [file, setFile] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const isVoice = form.memory_type === "voice";
 
   async function submit(e) {
     e.preventDefault();
     setError("");
+    if (isVoice && !file) {
+      setError("음성 파일을 선택해주세요.");
+      return;
+    }
     setLoading(true);
     try {
-      await api("/memories", {
-        method: "POST",
-        body: { ...form, related_person: form.related_person || null },
-      });
+      const data = new FormData();
+      data.append("title", form.title);
+      data.append("content", isVoice ? "" : form.content);
+      data.append("memory_type", form.memory_type);
+      if (form.related_person) data.append("related_person", form.related_person);
+      if (isVoice && file) data.append("file", file);
+      await apiForm("/memories", data);
       router.push("/memories");
     } catch (err) {
       setError(err.message);
@@ -40,7 +51,7 @@ export default function NewMemory() {
       <h1 className="text-2xl font-bold">새로운 기억 남기기</h1>
 
       <form onSubmit={submit} className="mt-6 space-y-4">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {TYPES.map(([key, label]) => (
             <button
               type="button"
@@ -56,6 +67,7 @@ export default function NewMemory() {
             </button>
           ))}
         </div>
+
         <input
           className={input}
           placeholder="제목"
@@ -63,14 +75,30 @@ export default function NewMemory() {
           onChange={(e) => setForm({ ...form, title: e.target.value })}
           required
         />
-        <textarea
-          className={input}
-          rows={10}
-          placeholder="내용을 적어주세요. 이 기록은 훗날 AI 답변의 근거가 됩니다."
-          value={form.content}
-          onChange={(e) => setForm({ ...form, content: e.target.value })}
-          required
-        />
+
+        {isVoice ? (
+          <div className="rounded-lg border border-dashed border-stone-300 bg-white p-4">
+            <input
+              type="file"
+              accept="audio/*"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              className="w-full text-sm text-stone-600"
+            />
+            <p className="mt-2 text-xs text-stone-400">
+              업로드 후 음성을 텍스트로 변환합니다. 변환이 끝나야 AI 답변의 근거로 검색됩니다. (최대 25MB)
+            </p>
+          </div>
+        ) : (
+          <textarea
+            className={input}
+            rows={10}
+            placeholder="내용을 적어주세요. 이 기록은 훗날 AI 답변의 근거가 됩니다."
+            value={form.content}
+            onChange={(e) => setForm({ ...form, content: e.target.value })}
+            required
+          />
+        )}
+
         <input
           className={input}
           placeholder="관련된 사람 (선택) — 예: 자녀, 배우자"

@@ -6,4 +6,5 @@ pgvector
 email-validator
 pyjwt
 python-dotenv
+python-multipart
 openai

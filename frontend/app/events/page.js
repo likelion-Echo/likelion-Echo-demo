@@ -152,6 +152,16 @@ export default function Events() {
             <p className="mt-2 text-sm text-stone-500">
               연결된 기록: {e.memories.map((m) => m.title).join(", ") || "없음"}
             </p>
+            <div className="mt-3 rounded-lg bg-stone-50 px-3 py-2 text-xs">
+              <p className="text-stone-500">
+                초대 코드 <span className="font-mono font-medium text-stone-800">{e.invite_code}</span>
+              </p>
+              <p className="mt-1 text-stone-400">
+                {e.recipient_linked
+                  ? "수신자가 연결되었습니다."
+                  : "이 코드를 받을 사람에게 전달하면 수신함에 나타납니다."}
+              </p>
+            </div>
           </div>
         ))}
       </div>
