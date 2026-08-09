@@ -9,9 +9,10 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="ko">
+      {/* 여백은 배려다. 밀도를 높여 정보를 더 넣지 않는다 (DESIGN.md §11) */}
       <body>
         <Nav />
-        <main className="mx-auto max-w-2xl px-4 py-8">{children}</main>
+        <main className="mx-auto max-w-2xl px-5 py-10">{children}</main>
       </body>
     </html>
   );

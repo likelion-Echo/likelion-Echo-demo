@@ -17,42 +17,41 @@ export default function Dashboard() {
       .catch(() => {});
   }, []);
 
-  const card = "rounded-xl border border-stone-200 bg-white p-5";
-
   return (
     <div>
-      <h1 className="text-2xl font-bold">안녕하세요, {name}님.</h1>
-      <p className="mt-1 text-sm text-stone-500">오늘도 당신의 이야기를 남겨보세요.</p>
+      <h1 className="t-h1">안녕하세요, {name}님.</h1>
+      <p className="t-meta mt-2">오늘도 당신의 이야기를 남겨보세요.</p>
 
-      <div className="mt-6 grid grid-cols-3 gap-3 text-center">
-        <div className={card}>
-          <p className="text-3xl font-bold">{stats.memories}</p>
-          <p className="mt-1 text-sm text-stone-500">나의 기록</p>
-        </div>
-        <div className={card}>
-          <p className="text-3xl font-bold">
-            {stats.values}
-            <span className="text-base font-normal text-stone-400"> / {stats.questions}</span>
-          </p>
-          <p className="mt-1 text-sm text-stone-500">가치관 질문</p>
-        </div>
-        <div className={card}>
-          <p className="text-3xl font-bold">{stats.events}</p>
-          <p className="mt-1 text-sm text-stone-500">등록된 이벤트</p>
-        </div>
+      <div className="mt-8 grid grid-cols-3 gap-3 text-center">
+        <Stat value={stats.memories} label="나의 기록" />
+        <Stat value={stats.values} suffix={` / ${stats.questions}`} label="가치관 질문" />
+        <Stat value={stats.events} label="미래 메시지" />
       </div>
 
-      <div className="mt-8 space-y-3">
-        <Link href="/memories/new" className="block rounded-xl bg-stone-800 px-5 py-4 text-white hover:bg-stone-700">
-          ✍️ 삶의 기록 남기기
+      {/* 한 화면에 Primary는 하나다 (DESIGN.md §6) */}
+      <div className="mt-12 space-y-3">
+        <Link href="/memories/new" className="btn btn-primary w-full">
+          삶의 기록 남기기
         </Link>
-        <Link href="/values" className="block rounded-xl border border-stone-300 bg-white px-5 py-4 hover:bg-stone-100">
-          💭 가치관 기록하기
+        <Link href="/values" className="btn btn-outline w-full">
+          가치관 기록하기
         </Link>
-        <Link href="/events" className="block rounded-xl border border-stone-300 bg-white px-5 py-4 hover:bg-stone-100">
-          ⏳ 미래 메시지 만들기
+        <Link href="/events" className="btn btn-outline w-full">
+          미래 메시지 만들기
         </Link>
       </div>
+    </div>
+  );
+}
+
+function Stat({ value, suffix, label }) {
+  return (
+    <div className="card px-4 py-6">
+      <p className="text-[28px] font-bold leading-none tracking-[-0.7px] text-ink">
+        {value}
+        {suffix && <span className="text-base font-normal text-ink-faint">{suffix}</span>}
+      </p>
+      <p className="t-caption mt-2">{label}</p>
     </div>
   );
 }

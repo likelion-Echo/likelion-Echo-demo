@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { api, apiBlobUrl, TYPE_ICON, TYPE_LABEL } from "@/lib/api";
+import { api, apiBlobUrl, TYPE_LABEL } from "@/lib/api";
+import { TypeIcon } from "../icons";
 
 const FILTERS = [
   ["all", "전체"],
@@ -13,8 +14,8 @@ const FILTERS = [
 ];
 
 const STATUS_LABEL = {
-  PENDING: "음성을 텍스트로 변환하는 중입니다...",
-  FAILED: "음성 변환에 실패했습니다. 이 기록은 검색 근거로 쓰이지 않습니다.",
+  PENDING: "음성을 옮겨 적는 중",
+  FAILED: "음성을 옮기지 못했어요. 파일은 그대로 남아 있어요.",
 };
 
 function AudioPlayer({ memoryId }) {
@@ -32,8 +33,8 @@ function AudioPlayer({ memoryId }) {
     return () => objectUrl && URL.revokeObjectURL(objectUrl);
   }, [memoryId]);
 
-  if (error) return <p className="text-xs text-red-500">{error}</p>;
-  if (!url) return <p className="text-xs text-stone-400">음성을 불러오는 중...</p>;
+  if (error) return <p className="t-caption text-critical">{error}</p>;
+  if (!url) return <p className="t-caption text-ink-faint">음성을 불러오는 중</p>;
   return <audio controls src={url} className="w-full" />;
 }
 
@@ -49,7 +50,7 @@ export default function Memories() {
   }, []);
 
   async function remove(id) {
-    if (!confirm("이 기록을 삭제할까요? AI 답변 검색에서도 제외됩니다.")) return;
+    if (!confirm("이 기록을 지울까요? Echo가 답변할 때 더 이상 참고하지 않아요.")) return;
     await api(`/memories/${id}`, { method: "DELETE" });
     setMemories(memories.filter((m) => m.memory_id !== id));
     setOpenId(null);
@@ -59,45 +60,64 @@ export default function Memories() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">나의 기록</h1>
-        <Link href="/memories/new" className="rounded-lg bg-stone-800 px-4 py-2 text-sm text-white hover:bg-stone-700">
-          + 새로운 기록
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="t-h1">나의 기록</h1>
+        <Link href="/memories/new" className="btn btn-primary btn-sm shrink-0">
+          새로운 기록
         </Link>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2 text-sm">
+      <div className="mt-6 flex flex-wrap gap-2">
         {FILTERS.map(([key, label]) => (
           <button
             key={key}
             onClick={() => setFilter(key)}
-            className={`rounded-full px-3 py-1 ${
-              filter === key ? "bg-stone-800 text-white" : "bg-white text-stone-500 border border-stone-200"
-            }`}
+            className={`chip ${filter === key ? "chip-active" : ""}`}
           >
             {label}
           </button>
         ))}
       </div>
 
-      <div className="mt-6 space-y-3">
-        {shown.length === 0 && <p className="py-10 text-center text-stone-400">아직 기록이 없습니다.</p>}
+      <div className="mt-8 space-y-3">
+        {/* 빈 상태: 일러스트 없음. 한 문장과 낮은 압력의 제안. */}
+        {shown.length === 0 && (
+          <div className="py-16 text-center">
+            <p className="t-meta">
+              {filter === "all" ? "아직 남긴 기록이 없어요." : "이 종류의 기록은 아직 없어요."}
+            </p>
+            {filter === "all" && (
+              <Link href="/memories/new" className="btn btn-primary mt-6">
+                첫 기록 남기기
+              </Link>
+            )}
+          </div>
+        )}
+
         {shown.map((m) => (
-          <div key={m.memory_id} className="rounded-xl border border-stone-200 bg-white">
+          <div key={m.memory_id} className="card card-interactive overflow-hidden">
             <button
               onClick={() => setOpenId(openId === m.memory_id ? null : m.memory_id)}
-              className="block w-full p-4 text-left hover:bg-stone-50"
+              className="block w-full p-6 text-left"
             >
-              <p className="text-xs text-stone-400">{m.created_at.slice(0, 10).replaceAll("-", ".")}</p>
-              <p className="mt-1 font-medium">{m.title}</p>
-              <p className="mt-1 text-sm text-stone-500">
-                {TYPE_ICON[m.memory_type] || "📄"} {TYPE_LABEL[m.memory_type] || m.memory_type}
-                {m.related_person && ` · ${m.related_person}`}
+              <p className="t-caption-sm">{m.created_at.slice(0, 10).replaceAll("-", ".")}</p>
+              <p className="t-title mt-1.5">{m.title}</p>
+
+              {/* 목록에서도 "이건 사람의 글"이라는 신호를 유지한다 (DESIGN.md §6) */}
+              {m.content && openId !== m.memory_id && (
+                <p className="prose-read-sm mt-2 line-clamp-2">{m.content}</p>
+              )}
+
+              <p className="t-caption mt-3 flex items-center gap-1.5 text-ink-faint">
+                <TypeIcon type={m.memory_type} />
+                {TYPE_LABEL[m.memory_type] || m.memory_type}
+                {m.related_person && <span>· {m.related_person}</span>}
               </p>
+
               {STATUS_LABEL[m.transcript_status] && (
                 <p
-                  className={`mt-1 text-xs ${
-                    m.transcript_status === "FAILED" ? "text-red-500" : "text-amber-700"
+                  className={`t-caption mt-2 ${
+                    m.transcript_status === "FAILED" ? "text-critical" : "text-ink-faint"
                   }`}
                 >
                   {STATUS_LABEL[m.transcript_status]}
@@ -106,20 +126,18 @@ export default function Memories() {
             </button>
 
             {openId === m.memory_id && (
-              <div className="border-t border-stone-100 px-4 pb-4 pt-3">
+              <div className="reveal border-t border-hairline px-6 pb-6 pt-5">
                 {m.has_audio && (
-                  <div className="mb-3">
+                  <div className="mb-4">
                     <AudioPlayer memoryId={m.memory_id} />
                   </div>
                 )}
-                <p className="whitespace-pre-wrap text-sm text-stone-700">
-                  {m.content || "(내용 없음)"}
-                </p>
+                <p className="prose-read">{m.content || "(내용 없음)"}</p>
                 <button
                   onClick={() => remove(m.memory_id)}
-                  className="mt-3 text-xs text-red-500 hover:underline"
+                  className="btn btn-quiet mt-4 -ml-3 text-sm hover:text-critical"
                 >
-                  삭제
+                  이 기록 지우기
                 </button>
               </div>
             )}

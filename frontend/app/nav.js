@@ -21,26 +21,30 @@ export default function Nav() {
 
   if (!authed || pathname === "/login") return null;
 
+  // 캔버스 배경 + 하단 헤어라인. 활성 ink 700 / 비활성 ink-muted (DESIGN.md §6)
   return (
-    <nav className="sticky top-0 z-10 border-b border-stone-200 bg-white/80 backdrop-blur">
-      <div className="mx-auto flex max-w-2xl items-center gap-1 overflow-x-auto px-4 py-3 text-sm">
-        <Link href="/dashboard" className="mr-2 shrink-0 font-serif text-lg font-bold text-stone-900">
+    <nav className="sticky top-0 z-10 border-b border-hairline bg-canvas/90 backdrop-blur">
+      <div className="mx-auto flex h-16 max-w-2xl items-center gap-1 overflow-x-auto px-5">
+        <Link href="/dashboard" className="mr-3 shrink-0 text-lg font-bold tracking-[-0.4px] text-ink">
           Echo
         </Link>
         {LINKS.map(([href, label]) => (
           <Link
             key={href}
             href={href}
-            className={`shrink-0 rounded-full px-3 py-1 ${
+            className={`shrink-0 rounded-sm px-3 py-1.5 text-sm transition-colors ${
               pathname.startsWith(href)
-                ? "bg-stone-800 text-white"
-                : "text-stone-500 hover:bg-stone-100"
+                ? "font-bold text-ink"
+                : "text-ink-muted hover:bg-sunken"
             }`}
           >
             {label}
           </Link>
         ))}
-        <button onClick={logout} className="ml-auto shrink-0 text-xs text-stone-400 hover:text-stone-600">
+        <button
+          onClick={logout}
+          className="ml-auto shrink-0 pl-3 text-xs text-ink-faint transition-colors hover:text-ink-muted"
+        >
           로그아웃
         </button>
       </div>

@@ -49,6 +49,17 @@ NO_RECORD_MESSAGE = "이 내용에 대해서는 남겨진 기록이 없습니다
 
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
 
+# 같은 와이파이의 다른 기기에서 붙을 때 IP가 매번 바뀌므로, 사설망 대역은 정규식으로 열어둔다.
+# 공인 IP는 매칭되지 않으므로 인터넷에서 바로 들어오지는 못한다.
+# 외부에 배포할 때는 CORS_ALLOW_LAN=false 로 끄고 CORS_ORIGINS만 쓴다.
+LAN_ORIGIN_REGEX = (
+    r"http://(localhost|127\.0\.0\.1|"
+    r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+    r"192\.168\.\d{1,3}\.\d{1,3}|"
+    r"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?"
+)
+CORS_ALLOW_LAN = os.getenv("CORS_ALLOW_LAN", "true").lower() != "false"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -65,6 +76,7 @@ app = FastAPI(title="Echo API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
+    allow_origin_regex=LAN_ORIGIN_REGEX if CORS_ALLOW_LAN else None,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -504,20 +516,23 @@ def get_or_create_chat(db: Session, author: User, viewer: User, event: Event | N
     return chat
 
 
+def source_out(m: Memory) -> dict:
+    """근거 카드용. excerpt는 화면에서 원문 두 줄을 보여주기 위한 발췌다."""
+    text = " ".join(m.search_text.split())
+    return {
+        "memory_id": m.memory_id,
+        "title": m.title,
+        "memory_type": m.memory_type,
+        "excerpt": text[:120] + ("…" if len(text) > 120 else ""),
+    }
+
+
 def message_out(m: ChatMessage, titles: dict[int, Memory]) -> dict:
     return {
         "role": m.role,
         "content": m.content,
         "grounded": m.grounded,
-        "sources": [
-            {
-                "memory_id": mid,
-                "title": titles[mid].title,
-                "memory_type": titles[mid].memory_type,
-            }
-            for mid in (m.cited_memory_ids or [])
-            if mid in titles
-        ],
+        "sources": [source_out(titles[mid]) for mid in (m.cited_memory_ids or []) if mid in titles],
     }
 
 
@@ -580,11 +595,7 @@ def chat(body: ChatIn, user: User = Depends(get_current_user), db: Session = Dep
     return {
         "answer": answer,
         "grounded": bool(used),
-        "sources": [
-            {"memory_id": mid, "title": by_id[mid].title, "memory_type": by_id[mid].memory_type}
-            for mid in used
-            if mid in by_id
-        ],
+        "sources": [source_out(by_id[mid]) for mid in used if mid in by_id],
     }
 
 

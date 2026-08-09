@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { api, TYPE_ICON } from "@/lib/api";
+import { api } from "@/lib/api";
+import { ChevronLeft, TypeIcon } from "../icons";
 
 // 수신자 화면 (PAGE-08). 초대 코드로 연결된 이벤트만 보인다 (ACL-01).
 export default function Receive() {
@@ -27,7 +28,7 @@ export default function Receive() {
     try {
       const ev = await api(`/invites/${encodeURIComponent(code.trim())}/accept`, { method: "POST" });
       setCode("");
-      setNotice(`'${ev.event_name}' 이벤트가 수신함에 추가되었습니다.`);
+      setNotice(`'${ev.event_name}' 이야기가 수신함에 도착했어요.`);
       load();
     } catch (err) {
       setError(err.message);
@@ -47,78 +48,80 @@ export default function Receive() {
 
   if (opened)
     return (
-      <div className="mt-6">
-        <button onClick={() => setOpened(null)} className="text-sm text-stone-400 hover:text-stone-600">
-          ← 뒤로
+      <div>
+        <button onClick={() => setOpened(null)} className="btn btn-quiet -ml-3 gap-1.5 text-sm">
+          <ChevronLeft />
+          뒤로
         </button>
-        <div className="mt-4 rounded-xl border border-stone-200 bg-white p-6">
-          <p className="text-sm text-stone-400">{opened.event_name}</p>
-          <h1 className="mt-1 text-xl font-bold">
-            {opened.author_name}님이 당신을 위해 남긴 메시지입니다.
-          </h1>
-          <div className="mt-6 space-y-4">
-            {opened.memories.length === 0 && <p className="text-stone-400">연결된 기록이 없습니다.</p>}
+
+        <div className="mt-6">
+          <p className="t-caption-sm">{opened.event_name}</p>
+          <h1 className="t-h2 mt-2">{opened.author_name}님이 당신을 위해 남긴 이야기예요.</h1>
+
+          {/* 여기부터는 전부 사람이 남긴 말이다 (DESIGN.md §3) */}
+          <div className="mt-10 space-y-10">
+            {opened.memories.length === 0 && (
+              <p className="t-meta text-ink-faint">연결된 기록이 없어요.</p>
+            )}
             {opened.memories.map((m) => (
-              <div key={m.memory_id} className="rounded-lg bg-stone-50 p-4">
-                <p className="text-sm font-medium">
-                  {TYPE_ICON[m.memory_type] || "📄"} {m.title}
+              <article key={m.memory_id}>
+                <p className="t-caption flex items-center gap-1.5 text-ink-faint">
+                  <TypeIcon type={m.memory_type} />
+                  {m.title}
                 </p>
-                <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
-                  {m.transcript_status === "PENDING" ? "음성을 텍스트로 변환하고 있습니다..." : m.content}
+                <p className="prose-read mt-3">
+                  {m.transcript_status === "PENDING" ? "음성을 옮겨 적는 중이에요." : m.content}
                 </p>
-              </div>
+              </article>
             ))}
           </div>
-          <Link
-            href={`/chat?event_id=${opened.event_id}`}
-            className="mt-6 block rounded-lg bg-stone-800 py-3 text-center text-white hover:bg-stone-700"
-          >
-            💬 Echo와 대화하기
+
+          <Link href={`/chat?event_id=${opened.event_id}`} className="btn btn-primary mt-12 w-full">
+            Echo와 이야기하기
           </Link>
         </div>
       </div>
     );
 
   return (
-    <div className="mt-6">
+    <div>
       <div className="text-center">
-        <h1 className="font-serif text-3xl font-bold">Echo</h1>
-        <p className="mt-3 text-stone-500">당신을 위해 남겨진 메시지가 있습니다.</p>
+        <h1 className="t-h1">수신함</h1>
+        <p className="prose-read mx-auto mt-3 text-[17px]">
+          당신을 위해 남겨진 이야기가 있어요.
+        </p>
       </div>
 
-      <form onSubmit={accept} className="mt-6 flex gap-2">
+      <form onSubmit={accept} className="mt-10 flex gap-2">
         <input
-          className="flex-1 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm focus:border-stone-500 focus:outline-none"
-          placeholder="받은 초대 코드를 입력하세요"
+          className="input flex-1"
+          placeholder="받은 초대 코드"
           value={code}
           onChange={(e) => setCode(e.target.value)}
         />
-        <button
-          disabled={!code.trim()}
-          className="rounded-lg bg-stone-800 px-4 text-sm text-white hover:bg-stone-700 disabled:opacity-50"
-        >
+        <button disabled={!code.trim()} className="btn btn-primary shrink-0 px-6">
           연결
         </button>
       </form>
-      {notice && <p className="mt-2 text-sm text-green-700">{notice}</p>}
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {notice && <p className="t-caption mt-3 text-positive">{notice}</p>}
+      {error && <p className="t-caption mt-3 text-critical">{error}</p>}
 
-      <div className="mt-8 space-y-3">
+      <div className="mt-10 space-y-3">
         {events.length === 0 && (
-          <p className="py-6 text-center text-stone-400">
-            아직 연결된 이벤트가 없습니다. 초대 코드를 입력해주세요.
+          <p className="t-meta py-10 text-center text-ink-faint">
+            아직 도착한 이야기가 없어요.
           </p>
         )}
         {events.map((ev) => (
           <button
             key={ev.event_id}
             onClick={() => (ev.status === "ACTIVATED" ? setOpened(ev) : activate(ev))}
-            className="block w-full rounded-xl border border-stone-200 bg-white p-5 text-center hover:border-stone-400"
+            className="card card-interactive block w-full p-8 text-center"
           >
-            <p className="font-medium">{ev.event_name}</p>
-            <p className="mt-1 text-sm text-stone-400">
+            <p className="t-title">{ev.event_name}</p>
+            <p className="t-caption mt-2 text-ink-faint">
               {ev.status === "ACTIVATED"
-                ? `${ev.author_name}님의 메시지 열기`
+                ? `${ev.author_name}님의 이야기 열기`
                 : "이 순간이 찾아왔다면 눌러주세요"}
             </p>
           </button>
