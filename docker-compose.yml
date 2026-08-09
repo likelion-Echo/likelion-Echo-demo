@@ -1,0 +1,14 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: echo
+      POSTGRES_PASSWORD: echo
+      POSTGRES_DB: echo
+    ports:
+      - "5433:5432"  # ponytail: 호스트에 네이티브 postgres가 5432를 쓰고 있어 5433으로 우회
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
