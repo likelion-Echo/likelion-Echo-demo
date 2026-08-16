@@ -64,4 +64,10 @@ export async function apiBlobUrl(path) {
 }
 
 // 타입 아이콘은 app/icons.js의 TypeIcon 컴포넌트가 담당한다 (DESIGN.md §7 — UI 크롬에 이모지 금지).
-export const TYPE_LABEL = { diary: "일기", letter: "편지", memo: "메모", voice: "음성", etc: "기타" };
+export const TYPE_LABEL = {
+  diary: "일기",
+  letter: "편지",
+  memo: "메모",
+  voice: "음성 메시지",
+  etc: "기타",
+};

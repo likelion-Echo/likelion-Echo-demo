@@ -1,5 +1,6 @@
 import "./globals.css";
 import Nav from "./nav";
+import { OnboardingGuard, OnboardingProvider } from "./onboarding";
 
 export const metadata = {
   title: "Echo — 당신의 목소리는 사라지지 않습니다",
@@ -11,8 +12,12 @@ export default function RootLayout({ children }) {
     <html lang="ko">
       {/* 여백은 배려다. 밀도를 높여 정보를 더 넣지 않는다 (DESIGN.md §11) */}
       <body>
-        <Nav />
-        <main className="mx-auto max-w-2xl px-5 py-10">{children}</main>
+        <OnboardingProvider>
+          <Nav />
+          <main className="mx-auto max-w-2xl px-5 py-10">
+            <OnboardingGuard>{children}</OnboardingGuard>
+          </main>
+        </OnboardingProvider>
       </body>
     </html>
   );

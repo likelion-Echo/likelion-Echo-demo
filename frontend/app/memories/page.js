@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, apiBlobUrl, TYPE_LABEL } from "@/lib/api";
+import { api, TYPE_LABEL } from "@/lib/api";
+import AudioMessagePlayer from "../audio-message-player";
+import FutureMessageComposer from "../future-message-composer";
 import { TypeIcon } from "../icons";
 
 const FILTERS = [
@@ -18,30 +21,12 @@ const STATUS_LABEL = {
   FAILED: "음성을 옮기지 못했어요. 파일은 그대로 남아 있어요.",
 };
 
-function AudioPlayer({ memoryId }) {
-  const [url, setUrl] = useState(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let objectUrl;
-    apiBlobUrl(`/memories/${memoryId}/audio`)
-      .then((u) => {
-        objectUrl = u;
-        setUrl(u);
-      })
-      .catch((err) => setError(err.message));
-    return () => objectUrl && URL.revokeObjectURL(objectUrl);
-  }, [memoryId]);
-
-  if (error) return <p className="t-caption text-critical">{error}</p>;
-  if (!url) return <p className="t-caption text-ink-faint">음성을 불러오는 중</p>;
-  return <audio controls src={url} className="w-full" />;
-}
-
 export default function Memories() {
+  const router = useRouter();
   const [memories, setMemories] = useState([]);
   const [filter, setFilter] = useState("all");
   const [openId, setOpenId] = useState(null);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     api("/memories")
@@ -61,11 +46,35 @@ export default function Memories() {
   return (
     <div>
       <div className="flex items-center justify-between gap-4">
-        <h1 className="t-h1">나의 기록</h1>
-        <Link href="/memories/new" className="btn btn-primary btn-sm shrink-0">
-          새로운 기록
-        </Link>
+        <div>
+          <p className="t-caption-sm uppercase tracking-[0.08em]">3단계 · 나의 메시지</p>
+          <h1 className="t-h1">나의 메시지</h1>
+          <p className="t-meta mt-2">남긴 메시지를 모아보고 미래의 순간에 전해요.</p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          {memories.length > 0 && (
+            <button onClick={() => setSending(!sending)} className="btn btn-outline btn-sm">
+              미래로 보내기
+            </button>
+          )}
+          <Link href="/memories/new" className="btn btn-primary btn-sm">
+            새 메시지
+          </Link>
+        </div>
       </div>
+
+      {sending && (
+        <FutureMessageComposer
+          memories={memories}
+          onClose={() => setSending(false)}
+          onSent={(event) => {
+            setSending(false);
+            // 받는 사람 화면에서 방금 만든 메시지를 미리 선택해 둔다.
+            sessionStorage.setItem("echo_pending_event_id", String(event.event_id));
+            router.push("/recipients");
+          }}
+        />
+      )}
 
       <div className="mt-6 flex flex-wrap gap-2">
         {FILTERS.map(([key, label]) => (
@@ -84,11 +93,11 @@ export default function Memories() {
         {shown.length === 0 && (
           <div className="py-16 text-center">
             <p className="t-meta">
-              {filter === "all" ? "아직 남긴 기록이 없어요." : "이 종류의 기록은 아직 없어요."}
+              {filter === "all" ? "아직 남긴 메시지가 없어요." : "이 종류의 메시지는 아직 없어요."}
             </p>
             {filter === "all" && (
               <Link href="/memories/new" className="btn btn-primary mt-6">
-                첫 기록 남기기
+                첫 메시지 남기기
               </Link>
             )}
           </div>
@@ -129,7 +138,7 @@ export default function Memories() {
               <div className="reveal border-t border-hairline px-6 pb-6 pt-5">
                 {m.has_audio && (
                   <div className="mb-4">
-                    <AudioPlayer memoryId={m.memory_id} />
+                    <AudioMessagePlayer memoryId={m.memory_id} />
                   </div>
                 )}
                 <p className="prose-read">{m.content || "(내용 없음)"}</p>

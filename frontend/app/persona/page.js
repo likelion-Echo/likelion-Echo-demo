@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useOnboarding } from "../onboarding";
 
 const SECTIONS = [
   ["speaking_style", "말투"],
@@ -16,6 +18,7 @@ const SECTIONS = [
 const VERBATIM = new Set(["frequent_expressions"]);
 
 export default function PersonaPage() {
+  const { refresh } = useOnboarding();
   const [persona, setPersona] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -32,6 +35,7 @@ export default function PersonaPage() {
     try {
       const d = await api("/persona/generate", { method: "POST" });
       setPersona(d.persona);
+      await refresh();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -51,6 +55,7 @@ export default function PersonaPage() {
 
   return (
     <div>
+      <p className="t-caption-sm uppercase tracking-[0.08em]">2단계 · 페르소나</p>
       <h1 className="t-h1">Echo가 이해한 당신</h1>
       <p className="t-meta mt-2">
         남긴 기록과 가치관 답변만을 근거로 해요. 없는 사실은 만들지 않아요.
@@ -88,6 +93,11 @@ export default function PersonaPage() {
       <button onClick={generate} className="btn btn-primary mt-10 w-full">
         {persona ? "다시 만들기" : "페르소나 만들기"}
       </button>
+      {persona && (
+        <Link href="/memories" className="btn btn-outline mt-3 w-full">
+          나의 메시지로 계속하기
+        </Link>
+      )}
     </div>
   );
 }

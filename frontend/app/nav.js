@@ -4,22 +4,27 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getToken, logout } from "@/lib/api";
+import JourneyProgress from "./journey-progress";
+import { useOnboarding } from "./onboarding";
 
 const LINKS = [
   ["/dashboard", "홈"],
-  ["/memories", "나의 기록"],
   ["/values", "가치관"],
   ["/persona", "페르소나"],
-  ["/events", "미래 메시지"],
+  ["/memories", "나의 메시지"],
+  ["/events", "보낸 메시지"],
+  ["/recipients", "받는 사람"],
   ["/receive", "수신함"],
 ];
 
 export default function Nav() {
   const pathname = usePathname();
+  const { status } = useOnboarding();
   const [authed, setAuthed] = useState(false);
   useEffect(() => setAuthed(!!getToken()), [pathname]);
 
   if (!authed || pathname === "/login") return null;
+  const links = status?.is_admin ? [["/dashboard", "홈"], ["/admin", "계정 관리"]] : LINKS;
 
   // 캔버스 배경 + 하단 헤어라인. 활성 ink 700 / 비활성 ink-muted (DESIGN.md §6)
   return (
@@ -28,7 +33,7 @@ export default function Nav() {
         <Link href="/dashboard" className="mr-3 shrink-0 text-lg font-bold tracking-[-0.4px] text-ink">
           Echo
         </Link>
-        {LINKS.map(([href, label]) => (
+        {links.map(([href, label]) => (
           <Link
             key={href}
             href={href}
@@ -48,6 +53,11 @@ export default function Nav() {
           로그아웃
         </button>
       </div>
+      {!status?.is_admin && (
+        <div className="border-t border-hairline/70">
+          <JourneyProgress className="mx-auto h-11 max-w-2xl px-5" />
+        </div>
+      )}
     </nav>
   );
 }

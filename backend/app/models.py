@@ -20,6 +20,26 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class AdminAccount(Base):
+    """관리 권한을 별도 테이블로 분리한다.
+
+    users 테이블에 역할 컬럼을 추가하면 이미 만들어진 데모 DB에 마이그레이션이 필요하다.
+    별도 테이블은 기존 개인 데이터 스키마를 건드리지 않으며, 관리자 여부만 표시한다.
+    """
+
+    __tablename__ = "admin_accounts"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OnboardingState(Base):
+    """첫 로그인 안내를 한 번만 보여주기 위한 사용자별 진행 상태."""
+
+    __tablename__ = "onboarding_states"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), primary_key=True)
+    welcome_seen: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 class Memory(Base):
     __tablename__ = "memories"
     memory_id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -111,6 +131,41 @@ class EventMemory(Base):
     memory_id: Mapped[int] = mapped_column(ForeignKey("memories.memory_id"), primary_key=True)
 
     memory: Mapped[Memory] = relationship()
+
+
+class Recipient(Base):
+    """사망 후 메시지를 받을 사람의 연락처. 이메일 발송은 추후 구현한다."""
+
+    __tablename__ = "recipients"
+    recipient_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), index=True)
+    name: Mapped[str] = mapped_column(String)
+    email: Mapped[str] = mapped_column(String)
+    phone: Mapped[str] = mapped_column(String)
+    role: Mapped[str] = mapped_column(String)  # 아들 | 딸 | 친구 | 배우자 | 부모님 | 기타
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    assignments: Mapped[list["RecipientEvent"]] = relationship(cascade="all, delete-orphan")
+
+
+class RecipientEvent(Base):
+    """한 메시지(Event)를 한 명의 수신자에게 배정한다."""
+
+    __tablename__ = "recipient_events"
+    recipient_id: Mapped[int] = mapped_column(ForeignKey("recipients.recipient_id"), primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.event_id"), primary_key=True, unique=True)
+
+    recipient: Mapped[Recipient] = relationship()
+    event: Mapped[Event] = relationship()
+
+
+class DeathNotice(Base):
+    """사망 분류 후 각 미래 메시지의 초대 메일을 한 번만 보냈는지 기록한다."""
+
+    __tablename__ = "death_notices"
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.event_id"), primary_key=True)
+    recipient_id: Mapped[int] = mapped_column(ForeignKey("recipients.recipient_id"), index=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class Chat(Base):

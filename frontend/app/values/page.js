@@ -1,9 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useOnboarding } from "../onboarding";
 
 export default function Values() {
+  const { refresh } = useOnboarding();
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
   const [idx, setIdx] = useState(0);
@@ -28,12 +31,17 @@ export default function Values() {
   }, [idx, questions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function next() {
-    if (text.trim()) {
-      await api("/values", { method: "POST", body: { question_id: q.question_id, answer: text } });
-      setAnswers({ ...answers, [q.question_id]: text });
+    const answer = text.trim();
+    if (!answer) return;
+
+    await api("/values", { method: "POST", body: { question_id: q.question_id, answer } });
+    setAnswers({ ...answers, [q.question_id]: answer });
+    if (idx + 1 >= questions.length) {
+      setDone(true);
+      await refresh();
+    } else {
+      setIdx(idx + 1);
     }
-    if (idx + 1 >= questions.length) setDone(true);
-    else setIdx(idx + 1);
   }
 
   if (!questions.length) return <p className="t-meta">질문을 불러오는 중</p>;
@@ -65,16 +73,20 @@ export default function Values() {
           ))}
         </div>
 
-        <a href="/persona" className="btn btn-primary mt-10 w-full">
+        <Link href="/persona" className="btn btn-primary mt-10 w-full">
           페르소나 만들러 가기
-        </a>
+        </Link>
       </div>
     );
 
   return (
     <div>
-      <p className="t-caption-sm">
-        {questions.length}개 중 {answered}개
+      <p className="t-caption-sm uppercase tracking-[0.08em]">
+        1단계 · 가치관
+      </p>
+      <p className="t-meta mt-2">Echo가 당신의 생각을 이해할 수 있도록, 한 질문씩 답해보세요.</p>
+      <p className="t-caption mt-8">
+        질문 {idx + 1} / {questions.length} · {answered}개 답변함
       </p>
       {/* 질문은 시스템의 말이므로 Pretendard */}
       <h1 className="t-h2 mt-3">{q.question}</h1>
@@ -95,7 +107,7 @@ export default function Values() {
         >
           이전
         </button>
-        <button onClick={next} className="btn btn-primary px-8">
+        <button onClick={next} disabled={!text.trim()} className="btn btn-primary px-8">
           {idx + 1 >= questions.length ? "완료" : "다음"}
         </button>
       </div>

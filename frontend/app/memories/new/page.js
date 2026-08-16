@@ -9,7 +9,7 @@ const TYPES = [
   ["letter", "편지"],
   ["diary", "일기"],
   ["memo", "메모"],
-  ["voice", "음성"],
+  ["voice", "음성 메시지"],
 ];
 
 export default function NewMemory() {
@@ -81,7 +81,8 @@ export default function NewMemory() {
               className="w-full text-sm text-ink-muted file:mr-3 file:rounded-sm file:border-0 file:bg-sunken file:px-3 file:py-2 file:text-sm file:text-ink"
             />
             <p className="t-caption mt-3 text-ink-faint">
-              올린 뒤 음성을 글로 옮겨요. 옮기는 일이 끝나야 Echo가 근거로 찾을 수 있어요. (최대 25MB)
+              생전에 직접 남긴 원본 음성을 전달해요. 올린 뒤에는 Echo가 근거로 찾을 수 있도록
+              음성을 글로 옮겨요. (최대 25MB)
             </p>
           </div>
         ) : (

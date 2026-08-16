@@ -14,17 +14,23 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app import ai
-from app.auth import create_token, get_current_user, hash_password, verify_password
+from app.auth import create_token, get_current_admin, get_current_user, hash_password, verify_password
 from app.db import SessionLocal, get_db, init_db
+from app.mailer import send_death_invitation
 from app.models import (
+    AdminAccount,
     Chat,
     ChatMessage,
+    DeathNotice,
     Event,
     EventMemory,
     Memory,
     MemoryChunk,
+    OnboardingState,
     Persona,
     Question,
+    Recipient,
+    RecipientEvent,
     User,
     ValueAnswer,
 )
@@ -93,6 +99,29 @@ LAN_ORIGIN_REGEX = (
 )
 CORS_ALLOW_LAN = os.getenv("CORS_ALLOW_LAN", "true").lower() != "false"
 
+# 해커톤 시연용 관리자. 환경변수로 바꾸면 첫 실행 때 그 계정이 만들어진다.
+# 이미 만들어진 계정의 비밀번호는 서버 시작 때 덮어쓰지 않는다.
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@gmail.com").strip().lower() or "admin@gmail.com"
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin") or "admin"
+ADMIN_NAME = os.getenv("ADMIN_NAME", "Echo 관리자").strip() or "Echo 관리자"
+
+
+def ensure_admin_account(db: Session) -> None:
+    """데모 시작 시 관리자 로그인과 역할 레코드를 한 번만 보장한다."""
+    admin = db.scalar(select(User).where(User.email == ADMIN_EMAIL))
+    if not admin:
+        admin = User(
+            email=ADMIN_EMAIL,
+            password_hash=hash_password(ADMIN_PASSWORD),
+            name=ADMIN_NAME,
+        )
+        db.add(admin)
+        db.flush()
+        log.info("시연용 관리자 계정을 만들었습니다: %s", ADMIN_EMAIL)
+    if not db.get(AdminAccount, admin.user_id):
+        db.add(AdminAccount(user_id=admin.user_id))
+    db.commit()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -102,6 +131,7 @@ async def lifespan(app: FastAPI):
         if not db.scalars(select(Question)).first():
             db.add_all(Question(question=q) for q in SEED_QUESTIONS)
             db.commit()
+        ensure_admin_account(db)
     yield
 
 
@@ -145,13 +175,244 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == body.email))
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(401, "이메일 또는 비밀번호가 올바르지 않습니다.")
+    if user.account_status != "ACTIVE":
+        raise HTTPException(403, "잠긴 계정입니다. 관리자에게 문의해주세요.")
     return {"user_id": user.user_id, "token": create_token(user.user_id), "name": user.name}
 
 
 @app.get("/auth/me")
-def me(user: User = Depends(get_current_user)):
+def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return {"user_id": user.user_id, "name": user.name, "email": user.email,
-            "account_status": user.account_status}
+            "account_status": user.account_status,
+            "is_admin": db.get(AdminAccount, user.user_id) is not None}
+
+
+@app.get("/onboarding/status")
+def onboarding_status(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """필수 온보딩과 이후 기록 여정의 진행 상태를 한 번에 반환한다."""
+    onboarding = db.get(OnboardingState, user.user_id)
+    question_count = db.scalar(select(func.count()).select_from(Question)) or 0
+    value_count = db.scalar(
+        select(func.count()).select_from(ValueAnswer).where(ValueAnswer.user_id == user.user_id)
+    ) or 0
+    persona_exists = db.scalar(
+        select(Persona.persona_id).where(Persona.user_id == user.user_id).limit(1)
+    ) is not None
+    memory_count = db.scalar(
+        select(func.count()).select_from(Memory).where(Memory.user_id == user.user_id)
+    ) or 0
+    event_count = db.scalar(
+        select(func.count()).select_from(Event).where(Event.user_id == user.user_id)
+    ) or 0
+    recipient_count = db.scalar(
+        select(func.count()).select_from(Recipient).where(Recipient.user_id == user.user_id)
+    ) or 0
+    assigned_event_count = db.scalar(
+        select(func.count())
+        .select_from(RecipientEvent)
+        .join(Event, RecipientEvent.event_id == Event.event_id)
+        .where(Event.user_id == user.user_id)
+    ) or 0
+
+    values_complete = question_count > 0 and value_count >= question_count
+    return {
+        "is_admin": db.get(AdminAccount, user.user_id) is not None,
+        "welcome_seen": bool(onboarding and onboarding.welcome_seen),
+        "values_complete": values_complete,
+        "value_count": value_count,
+        "question_count": question_count,
+        "persona_exists": persona_exists,
+        "memory_count": memory_count,
+        "event_count": event_count,
+        "recipient_count": recipient_count,
+        "assigned_event_count": assigned_event_count,
+        "recipients_complete": event_count > 0 and assigned_event_count >= event_count,
+        "required_complete": values_complete and persona_exists,
+    }
+
+
+@app.post("/onboarding/welcome")
+def complete_onboarding_welcome(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """첫 로그인 환영 화면을 확인했음을 저장한다."""
+    state = db.get(OnboardingState, user.user_id)
+    if not state:
+        state = OnboardingState(user_id=user.user_id)
+        db.add(state)
+    state.welcome_seen = True
+    db.commit()
+    return {"welcome_seen": True}
+
+
+# ---------- 관리자 계정 관리 (개인 콘텐츠 비공개) ----------
+
+class AccountStatusIn(BaseModel):
+    account_status: str
+
+
+def admin_account_out(account: User, admin_ids: set[int]) -> dict:
+    """관리 화면에는 계정 식별·상태 정보만 내보낸다.
+
+    기록, 음성 파일, 가치관 답변, 페르소나, 수신자, 이벤트, 대화의 조회는
+    이 API에 포함하지 않고, 관리자용 개인 콘텐츠 API도 만들지 않는다.
+    """
+    return {
+        "user_id": account.user_id,
+        "name": account.name,
+        "email": account.email,
+        "account_status": account.account_status,
+        "created_at": account.created_at.isoformat(),
+        "is_admin": account.user_id in admin_ids,
+    }
+
+
+@app.get("/admin/accounts")
+def list_admin_accounts(
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """관리자는 계정 메타데이터와 잠금 상태만 볼 수 있다."""
+    accounts = db.scalars(select(User).order_by(User.created_at.desc())).all()
+    admin_ids = set(db.scalars(select(AdminAccount.user_id)).all())
+    return [
+        {
+            **admin_account_out(account, admin_ids),
+            # 마지막 관리자 보장을 위해 현재 로그인한 관리자는 직접 해제하지 못한다.
+            "can_revoke_admin": account.user_id in admin_ids and account.user_id != admin.user_id,
+        }
+        for account in accounts
+    ]
+
+
+@app.patch("/admin/accounts/{user_id}/status")
+def update_account_status(
+    user_id: int,
+    body: AccountStatusIn,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """일반 계정만 ACTIVE/LOCKED로 전환한다. 관리자 계정은 여기서 변경하지 않는다."""
+    status = body.account_status.upper().strip()
+    if status not in {"ACTIVE", "LOCKED"}:
+        raise HTTPException(422, "계정 상태는 ACTIVE 또는 LOCKED만 가능합니다.")
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(404, "계정을 찾을 수 없습니다.")
+    if target.user_id == admin.user_id or db.get(AdminAccount, target.user_id):
+        raise HTTPException(403, "관리자 계정의 상태는 이 화면에서 변경할 수 없습니다.")
+    target.account_status = status
+    db.commit()
+    return admin_account_out(target, set(db.scalars(select(AdminAccount.user_id)).all()))
+
+
+def send_death_notices(db: Session, owner: User) -> dict:
+    """배정된 메시지만 수신자별로 모아 Gmail 초대 메일을 보낸다.
+
+    관리자 API 응답에는 연락처나 초대 코드를 넣지 않아 개인정보를 노출하지 않는다.
+    """
+    rows = db.execute(
+        select(Recipient, Event)
+        .join(RecipientEvent, RecipientEvent.recipient_id == Recipient.recipient_id)
+        .join(Event, Event.event_id == RecipientEvent.event_id)
+        .where(Event.user_id == owner.user_id)
+        .order_by(Recipient.recipient_id, Event.event_id)
+    ).all()
+    sent_event_ids = set(
+        db.scalars(
+            select(DeathNotice.event_id)
+            .join(Event, Event.event_id == DeathNotice.event_id)
+            .where(Event.user_id == owner.user_id)
+        ).all()
+    )
+    grouped: dict[int, dict] = {}
+    for recipient, event in rows:
+        if event.event_id in sent_event_ids:
+            continue
+        group = grouped.setdefault(recipient.recipient_id, {"recipient": recipient, "events": []})
+        group["events"].append(event)
+
+    if not rows:
+        raise HTTPException(409, "메일을 보낼 수신자와 메시지가 연결되어 있지 않습니다.")
+
+    recipient_count = 0
+    event_count = 0
+    for group in grouped.values():
+        recipient = group["recipient"]
+        events = group["events"]
+        send_death_invitation(
+            recipient_email=recipient.email,
+            recipient_name=recipient.name,
+            owner_name=owner.name,
+            events=[(event.event_name, event.invite_code) for event in events],
+        )
+        for event in events:
+            db.add(DeathNotice(event_id=event.event_id, recipient_id=recipient.recipient_id))
+        db.commit()  # 일부 성공 뒤 재시도해도 같은 초대 메일을 중복 발송하지 않는다.
+        recipient_count += 1
+        event_count += len(events)
+
+    return {"recipient_count": recipient_count, "event_count": event_count}
+
+
+@app.post("/admin/accounts/{user_id}/declare-deceased")
+def declare_deceased_and_send_invites(
+    user_id: int,
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """관리자가 사망으로 분류한 계정의 배정 메시지를 수신자에게 발송한다."""
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(404, "계정을 찾을 수 없습니다.")
+    if db.get(AdminAccount, target.user_id):
+        raise HTTPException(403, "관리자 계정은 사망으로 분류할 수 없습니다.")
+    if target.account_status == "DECEASED":
+        raise HTTPException(409, "이미 사망으로 분류된 계정입니다.")
+
+    delivery = send_death_notices(db, target)
+    target.account_status = "DECEASED"
+    db.commit()
+    return {
+        **admin_account_out(target, set(db.scalars(select(AdminAccount.user_id)).all())),
+        "email_delivery": delivery,
+    }
+
+
+@app.post("/admin/accounts/{user_id}/grant-admin")
+def grant_admin_role(
+    user_id: int,
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """일반 계정에 관리자 역할을 부여한다.
+
+    새 관리자의 권한도 이 파일의 /admin/accounts API로 한정된다. 개인 콘텐츠를
+    조회하는 권한은 별도로 생기지 않는다.
+    """
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(404, "계정을 찾을 수 없습니다.")
+    if not db.get(AdminAccount, target.user_id):
+        db.add(AdminAccount(user_id=target.user_id))
+        db.commit()
+    return admin_account_out(target, set(db.scalars(select(AdminAccount.user_id)).all()))
+
+
+@app.post("/admin/accounts/{user_id}/revoke-admin")
+def revoke_admin_role(
+    user_id: int,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """다른 관리자의 역할을 회수한다. 현재 관리자는 스스로 회수할 수 없다."""
+    if user_id == admin.user_id:
+        raise HTTPException(403, "현재 로그인한 관리자의 권한은 이 화면에서 해제할 수 없습니다.")
+    role = db.get(AdminAccount, user_id)
+    if not role:
+        raise HTTPException(404, "관리자 권한이 없는 계정입니다.")
+    db.delete(role)
+    db.commit()
+    target = db.get(User, user_id)
+    return admin_account_out(target, set(db.scalars(select(AdminAccount.user_id)).all()))
 
 
 # ---------- 기록 (MEM-01 ~ MEM-05) ----------
@@ -418,6 +679,7 @@ def event_out(e: Event, viewer_id: int) -> dict:
         "status": e.status,
         "author_name": e.owner.name,
         "is_owner": is_owner,
+        "recipient_assigned": False,
         "memories": [memory_out(em.memory) for em in e.memories] if visible else [],
     }
     if is_owner:
@@ -446,12 +708,128 @@ def create_event(body: EventIn, user: User = Depends(get_current_user), db: Sess
     return event_out(e, user.user_id)
 
 
+class RecipientIn(BaseModel):
+    name: str
+    email: EmailStr
+    phone: str
+    role: str
+
+
+class RecipientMessagesIn(BaseModel):
+    event_ids: list[int]
+
+
+def recipient_out(recipient: Recipient) -> dict:
+    messages = [
+        {
+            "event_id": assignment.event.event_id,
+            "event_name": assignment.event.event_name,
+            "status": assignment.event.status,
+            "invite_code": assignment.event.invite_code,
+        }
+        for assignment in recipient.assignments
+    ]
+    return {
+        "recipient_id": recipient.recipient_id,
+        "name": recipient.name,
+        "email": recipient.email,
+        "phone": recipient.phone,
+        "role": recipient.role,
+        "message_ids": [message["event_id"] for message in messages],
+        "messages": messages,
+    }
+
+
+@app.get("/recipients")
+def list_recipients(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    rows = db.scalars(
+        select(Recipient).where(Recipient.user_id == user.user_id).order_by(Recipient.created_at.desc())
+    ).all()
+    return [recipient_out(recipient) for recipient in rows]
+
+
+@app.post("/recipients")
+def create_recipient(body: RecipientIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    check_active(user)
+    name, phone, role = body.name.strip(), body.phone.strip(), body.role.strip()
+    if not name or not phone or not role:
+        raise HTTPException(422, "이름, 전화번호, 구성원 역할을 모두 입력해주세요.")
+    if db.scalar(
+        select(Recipient.recipient_id).where(
+            Recipient.user_id == user.user_id, Recipient.email == str(body.email)
+        )
+    ):
+        raise HTTPException(409, "같은 이메일의 받는 사람이 이미 등록되어 있습니다.")
+
+    recipient = Recipient(user_id=user.user_id, name=name, email=str(body.email), phone=phone, role=role)
+    db.add(recipient)
+    db.commit()
+    db.refresh(recipient)
+    return recipient_out(recipient)
+
+
+@app.post("/recipients/{recipient_id}/messages")
+def assign_recipient_messages(
+    recipient_id: int,
+    body: RecipientMessagesIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """수신자별로 보낼 미래 메시지를 배정한다. 실제 메일 발송은 하지 않는다."""
+    check_active(user)
+    recipient = db.scalar(
+        select(Recipient).where(Recipient.recipient_id == recipient_id, Recipient.user_id == user.user_id)
+    )
+    if not recipient:
+        raise HTTPException(404, "받는 사람을 찾을 수 없습니다.")
+
+    event_ids = list(dict.fromkeys(body.event_ids))
+    events = db.scalars(
+        select(Event).where(Event.event_id.in_(event_ids), Event.user_id == user.user_id)
+    ).all() if event_ids else []
+    if len(events) != len(event_ids):
+        raise HTTPException(404, "보낼 메시지 중 일부를 찾을 수 없습니다.")
+    if any(event.recipient_user_id is not None for event in events):
+        raise HTTPException(409, "이미 수신자가 연결된 메시지는 변경할 수 없습니다.")
+
+    occupied = db.scalars(
+        select(RecipientEvent).where(
+            RecipientEvent.event_id.in_(event_ids), RecipientEvent.recipient_id != recipient_id
+        )
+    ).all() if event_ids else []
+    if occupied:
+        raise HTTPException(409, "다른 받는 사람에게 이미 지정된 메시지가 있습니다.")
+
+    previous = db.scalars(
+        select(RecipientEvent).where(RecipientEvent.recipient_id == recipient_id)
+    ).all()
+    for assignment in previous:
+        if assignment.event.recipient_user_id is None:
+            assignment.event.recipient = ""
+    db.execute(delete(RecipientEvent).where(RecipientEvent.recipient_id == recipient_id))
+
+    for event in events:
+        event.recipient = f"{recipient.name} ({recipient.role})"
+        db.add(RecipientEvent(recipient_id=recipient.recipient_id, event_id=event.event_id))
+    db.commit()
+    db.refresh(recipient)
+    return recipient_out(recipient)
+
+
 @app.get("/events")
 def list_events(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = db.scalars(
         select(Event).where(Event.user_id == user.user_id).order_by(Event.created_at.desc())
     ).all()
-    return [event_out(e, user.user_id) for e in rows]
+    assigned_ids = set(
+        db.scalars(
+            select(RecipientEvent.event_id).where(RecipientEvent.event_id.in_([event.event_id for event in rows]))
+        ).all()
+    ) if rows else set()
+    return [
+        {**event_out(event, user.user_id), "recipient_assigned": event.event_id in assigned_ids}
+        for event in rows
+    ]
 
 
 @app.get("/events/inbox")
@@ -484,6 +862,9 @@ def accept_invite(code: str, user: User = Depends(get_current_user), db: Session
         raise HTTPException(404, "유효하지 않은 초대 코드입니다.")
     if e.user_id == user.user_id:
         raise HTTPException(400, "본인이 만든 이벤트는 수신할 수 없습니다.")
+    assignment = db.scalar(select(RecipientEvent).where(RecipientEvent.event_id == e.event_id))
+    if assignment and assignment.recipient.email.lower() != user.email.lower():
+        raise HTTPException(403, "이 초대는 지정된 이메일 계정으로만 받을 수 있습니다.")
     if e.recipient_user_id and e.recipient_user_id != user.user_id:
         raise HTTPException(409, "이미 다른 수신자가 연결된 이벤트입니다.")
     e.recipient_user_id = user.user_id

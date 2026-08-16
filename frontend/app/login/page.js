@@ -1,15 +1,22 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, setAuth } from "@/lib/api";
+import { requiredOnboardingPath, useOnboarding } from "../onboarding";
 
 export default function Login() {
   const router = useRouter();
+  const { refresh } = useOnboarding();
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ email: "", password: "", name: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [inviteCode, setInviteCode] = useState("");
+
+  useEffect(() => {
+    setInviteCode(new URLSearchParams(window.location.search).get("invite") || "");
+  }, []);
 
   async function submit(e) {
     e.preventDefault();
@@ -21,7 +28,8 @@ export default function Login() {
         mode === "login" ? { email: form.email, password: form.password } : form;
       const data = await api(path, { method: "POST", body });
       setAuth(data);
-      router.push("/dashboard");
+      const status = await refresh();
+      router.replace(inviteCode ? `/receive?code=${encodeURIComponent(inviteCode)}` : requiredOnboardingPath(status) || "/dashboard");
     } catch (err) {
       setError(err.message);
       setLoading(false);

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import AudioMessagePlayer from "../audio-message-player";
 import { ChevronLeft, TypeIcon } from "../icons";
 
 // 수신자 화면 (PAGE-08). 초대 코드로 연결된 이벤트만 보인다 (ACL-01).
@@ -19,20 +20,28 @@ export default function Receive() {
       .catch(() => {});
   }
 
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+    const inviteCode = new URLSearchParams(window.location.search).get("code");
+    if (inviteCode) acceptCode(inviteCode);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function accept(e) {
-    e.preventDefault();
+  async function acceptCode(inviteCode) {
     setError("");
     setNotice("");
     try {
-      const ev = await api(`/invites/${encodeURIComponent(code.trim())}/accept`, { method: "POST" });
+      const ev = await api(`/invites/${encodeURIComponent(inviteCode.trim())}/accept`, { method: "POST" });
       setCode("");
       setNotice(`'${ev.event_name}' 이야기가 수신함에 도착했어요.`);
       load();
     } catch (err) {
       setError(err.message);
     }
+  }
+
+  async function accept(e) {
+    e.preventDefault();
+    await acceptCode(code);
   }
 
   async function activate(ev) {
@@ -69,9 +78,19 @@ export default function Receive() {
                   <TypeIcon type={m.memory_type} />
                   {m.title}
                 </p>
-                <p className="prose-read mt-3">
-                  {m.transcript_status === "PENDING" ? "음성을 옮겨 적는 중이에요." : m.content}
-                </p>
+                {m.has_audio && (
+                  <div className="mt-3">
+                    <AudioMessagePlayer
+                      memoryId={m.memory_id}
+                      label={`${opened.author_name}님이 남긴 원본 음성 메시지`}
+                    />
+                  </div>
+                )}
+                {(m.content || m.transcript_status === "PENDING") && (
+                  <p className="prose-read mt-3">
+                    {m.transcript_status === "PENDING" ? "음성을 옮겨 적는 중이에요." : m.content}
+                  </p>
+                )}
               </article>
             ))}
           </div>

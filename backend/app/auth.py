@@ -9,7 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User
+from app.models import AdminAccount, User
 
 JWT_SECRET = os.getenv("JWT_SECRET")
 if not JWT_SECRET:
@@ -52,4 +52,19 @@ def get_current_user(
     user = db.get(User, int(payload["sub"]))
     if not user:
         raise HTTPException(401, "사용자를 찾을 수 없습니다.")
+    if user.account_status != "ACTIVE":
+        raise HTTPException(403, "잠긴 계정입니다. 관리자에게 문의해주세요.")
+    return user
+
+
+def get_current_admin(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """계정 메타데이터를 관리할 수 있는 관리자만 허용한다.
+
+    이 의존성은 개인 기록·가치관·페르소나·대화 API와 분리되어 있다.
+    """
+    if not db.get(AdminAccount, user.user_id):
+        raise HTTPException(403, "관리자 계정만 접근할 수 있습니다.")
     return user
