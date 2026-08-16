@@ -61,21 +61,20 @@ export function OnboardingGuard({ children }) {
   const { status, loading, mounted } = useOnboarding();
   const isLogin = pathname === "/login";
   // 이메일 링크로 온 수신자는 자신의 가치관 온보딩보다 초대 수락을 먼저 완료해야 한다.
-  const isInviteReceive =
-    pathname === "/receive" && typeof window !== "undefined" && new URLSearchParams(window.location.search).has("code");
+  const skipsOnboarding = pathname === "/receive" || pathname === "/chat";
   const requiredPath = status ? requiredOnboardingPath(status) : null;
 
   useEffect(() => {
-    if (!loading && !isLogin && !isInviteReceive && getToken() && requiredPath && pathname !== requiredPath) {
+    if (!loading && !isLogin && !skipsOnboarding && getToken() && requiredPath && pathname !== requiredPath) {
       router.replace(requiredPath);
     }
-  }, [isInviteReceive, isLogin, loading, pathname, requiredPath, router]);
+  }, [isLogin, loading, pathname, requiredPath, router, skipsOnboarding]);
 
   // localStorage는 서버에서 읽을 수 없다. 첫 렌더는 서버와 동일하게 페이지를 두고,
   // 마운트 뒤에만 토큰 기반의 온보딩 화면으로 전환해야 hydration 불일치가 생기지 않는다.
   if (!mounted) return children;
 
-  if (!isLogin && getToken() && (loading || (!isInviteReceive && requiredPath && pathname !== requiredPath))) {
+  if (!isLogin && getToken() && (loading || (!skipsOnboarding && requiredPath && pathname !== requiredPath))) {
     return (
       <div role="status" className="py-20 text-center">
         <div className="spinner mx-auto" aria-hidden="true" />
