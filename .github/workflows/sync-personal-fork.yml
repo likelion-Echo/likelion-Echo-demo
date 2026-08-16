@@ -1,0 +1,71 @@
+name: Sync organization and personal repositories
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# The workflow uses SYNC_TOKEN because it must be able to push to the *other*
+# repository as well as the repository that triggered the run.
+permissions:
+  contents: read
+
+concurrency:
+  group: bidirectional-repository-sync
+  cancel-in-progress: false
+
+env:
+  ORGANIZATION_REPOSITORY: likelion-Echo/likelion-Echo-demo
+  PERSONAL_REPOSITORY: han122400/likelion-Echo-demo
+  BRANCH: main
+
+jobs:
+  sync:
+    # Keep this workflow inert if the file is copied into another repository.
+    if: github.repository == 'likelion-Echo/likelion-Echo-demo' || github.repository == 'han122400/likelion-Echo-demo'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Choose the other repository
+        id: peer
+        shell: bash
+        run: |
+          if [ "$GITHUB_REPOSITORY" = "$ORGANIZATION_REPOSITORY" ]; then
+            echo "repository=$PERSONAL_REPOSITORY" >> "$GITHUB_OUTPUT"
+          else
+            echo "repository=$ORGANIZATION_REPOSITORY" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out the triggering branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Merge and publish both repositories
+        env:
+          PEER_REPOSITORY: ${{ steps.peer.outputs.repository }}
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "$SYNC_TOKEN" ]; then
+            echo "Missing SYNC_TOKEN. Add it to this repository's Actions secrets."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          AUTH_URL="https://x-access-token:${SYNC_TOKEN}@github.com"
+          git remote set-url origin "${AUTH_URL}/${GITHUB_REPOSITORY}.git"
+          git remote add peer "${AUTH_URL}/${PEER_REPOSITORY}.git"
+
+          # A newly created personal mirror has no branch yet. In that case,
+          # the first run simply seeds it from the repository that triggered
+          # this workflow. Later runs merge the other side before publishing.
+          if git ls-remote --exit-code peer "refs/heads/$BRANCH" >/dev/null 2>&1; then
+            git fetch peer "$BRANCH"
+            git merge --no-edit "peer/$BRANCH"
+          fi
+          git push origin "HEAD:$BRANCH"
+          git push peer "HEAD:$BRANCH"
