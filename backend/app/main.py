@@ -872,9 +872,31 @@ def accept_invite(code: str, user: User = Depends(get_current_user), db: Session
         raise HTTPException(403, "이 초대는 지정된 이메일 계정으로만 받을 수 있습니다.")
     if e.recipient_user_id and e.recipient_user_id != user.user_id:
         raise HTTPException(409, "이미 다른 수신자가 연결된 이벤트입니다.")
-    e.recipient_user_id = user.user_id
+
+    accepted_events = [e]
+    if assignment:
+        same_email_assignments = db.execute(
+            select(Event)
+            .join(RecipientEvent, RecipientEvent.event_id == Event.event_id)
+            .join(Recipient, Recipient.recipient_id == RecipientEvent.recipient_id)
+            .where(
+                Event.user_id == e.user_id,
+                func.lower(Recipient.email) == user.email.lower(),
+            )
+            .order_by(Event.event_id)
+        ).scalars().all()
+        blocked = [
+            event for event in same_email_assignments
+            if event.recipient_user_id and event.recipient_user_id != user.user_id
+        ]
+        if blocked:
+            raise HTTPException(409, "같은 이메일로 배정된 메시지 중 이미 다른 수신자가 연결된 이벤트가 있습니다.")
+        accepted_events = same_email_assignments
+
+    for event in accepted_events:
+        event.recipient_user_id = user.user_id
     db.commit()
-    return event_out(e, user.user_id)
+    return {**event_out(e, user.user_id), "accepted_count": len(accepted_events)}
 
 
 # ---------- AI 대화 (AI-04, MSG-02) ----------

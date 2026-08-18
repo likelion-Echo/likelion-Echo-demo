@@ -42,9 +42,10 @@ def send_death_invitation(
         (event_name, f"{app_url}/login?invite={quote(invite_code, safe='')}")
         for event_name, invite_code in events
     ]
-    text_links = "\n".join(f"- {event_name}: {url}" for event_name, url in links)
+    text_links = "\n".join(f"- {event_name}: 메시지를 확인하세요 {url}" for event_name, url in links)
     html_links = "".join(
-        f'<li><a href="{html.escape(url, quote=True)}">{html.escape(event_name)}</a></li>'
+        f'<li>{html.escape(event_name)}: '
+        f'<a href="{html.escape(url, quote=True)}">메시지를 확인하세요</a></li>'
         for event_name, url in links
     )
 

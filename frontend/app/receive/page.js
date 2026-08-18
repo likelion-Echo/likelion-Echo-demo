@@ -32,7 +32,11 @@ export default function Receive() {
     try {
       const ev = await api(`/invites/${encodeURIComponent(inviteCode.trim())}/accept`, { method: "POST" });
       setCode("");
-      setNotice(`'${ev.event_name}' 이야기가 수신함에 도착했어요.`);
+      setNotice(
+        ev.accepted_count > 1
+          ? `메시지 ${ev.accepted_count}개가 수신함에 도착했어요.`
+          : `'${ev.event_name}' 이야기가 수신함에 도착했어요.`
+      );
       load();
     } catch (err) {
       setError(err.message);
