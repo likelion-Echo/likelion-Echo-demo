@@ -1,13 +1,76 @@
 services:
   db:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: echo
-      POSTGRES_PASSWORD: echo
-      POSTGRES_DB: echo
+      POSTGRES_USER: ${POSTGRES_USER:-echo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-echo}
+      POSTGRES_DB: ${POSTGRES_DB:-echo}
     ports:
-      - "5433:5432"  # ponytail: 호스트에 네이티브 postgres가 5432를 쓰고 있어 5433으로 우회
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-echo}:${POSTGRES_PASSWORD:-echo}@db:5432/${POSTGRES_DB:-echo}
+      JWT_SECRET: ${JWT_SECRET:-change-this-before-production}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4o-mini}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      OPENAI_STT_MODEL: ${OPENAI_STT_MODEL:-whisper-1}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@gmail.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      ADMIN_NAME: ${ADMIN_NAME:-Echo Admin}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      CORS_ALLOW_LAN: ${CORS_ALLOW_LAN:-true}
+      FRONTEND_APP_URL: ${FRONTEND_APP_URL:-http://localhost:3000}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_EMAIL: ${SMTP_EMAIL:-}
+      SMTP_APP_PASSWORD: ${SMTP_APP_PASSWORD:-}
+      MAX_RELEVANT_DISTANCE: ${MAX_RELEVANT_DISTANCE:-0.70}
+      STORAGE_DIR: /app/storage/uploads
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - backend_storage:/app/storage
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-}
+        NEXT_PUBLIC_API_PORT: ${NEXT_PUBLIC_API_PORT:-8000}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-}
+      NEXT_PUBLIC_API_PORT: ${NEXT_PUBLIC_API_PORT:-8000}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+
 volumes:
   pgdata:
+  backend_storage:
