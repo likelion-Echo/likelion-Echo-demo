@@ -145,6 +145,11 @@ app.add_middleware(
 )
 
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 # ---------- 계정 (AUTH-01, AUTH-02) ----------
 
 class SignupIn(BaseModel):
