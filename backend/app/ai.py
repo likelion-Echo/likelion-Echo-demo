@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 
 from fastapi import HTTPException
 from openai import OpenAI
@@ -58,6 +59,8 @@ def embed(text: str) -> list[float]:
 PERSONA_ANALYSIS_PROMPT = """당신은 사용자가 남긴 기록과 가치관 답변을 분석하는 분석가입니다.
 아래 기록들을 읽고 사용자의 특성을 JSON으로 구조화하세요.
 실제 기록에서 확인할 수 있는 내용만 사용하고, 추측하지 마세요.
+모든 항목은 자연스러운 한국어 명사구 또는 짧은 한국어 문장으로 작성하세요.
+영어 단어, 영어 상담 용어, 번역투 표현을 섞지 마세요. 예: "encouragement" 대신 "격려"라고 쓰세요.
 
 반드시 아래 JSON 형식으로만 답하세요:
 {
@@ -70,22 +73,48 @@ PERSONA_ANALYSIS_PROMPT = """당신은 사용자가 남긴 기록과 가치관 �
 }"""
 
 
+def persona_has_unwanted_english(persona: dict) -> bool:
+    """자주 쓰는 표현 외 분석 항목에 영어 단어가 섞이면 재생성을 유도한다."""
+    for key, items in persona.items():
+        if key == "frequent_expressions":
+            continue
+        if not isinstance(items, list):
+            continue
+        if any(re.search(r"[A-Za-z]{2,}", str(item)) for item in items):
+            return True
+    return False
+
+
 def generate_persona(name: str, memories_text: str, values_text: str) -> tuple[dict, str]:
     """AI-01/02/03: 기록 분석 → Persona JSON → System Prompt."""
-    res = client().chat.completions.create(
-        model=CHAT_MODEL,
-        response_format={"type": "json_object"},
-        messages=[
+    user_content = f"[삶의 기록]\n{memories_text}\n\n[가치관 질문과 답변]\n{values_text}"
+    persona = None
+    for attempt in range(2):
+        messages = [
             {"role": "system", "content": PERSONA_ANALYSIS_PROMPT},
-            {"role": "user", "content": f"[삶의 기록]\n{memories_text}\n\n[가치관 질문과 답변]\n{values_text}"},
-        ],
-    )
-    try:
-        persona = json.loads(res.choices[0].message.content)
-    except json.JSONDecodeError:
-        raise HTTPException(502, "페르소나 분석 결과를 해석하지 못했습니다. 다시 시도해주세요.")
-    if not isinstance(persona, dict):
-        raise HTTPException(502, "페르소나 분석 결과 형식이 올바르지 않습니다.")
+            {"role": "user", "content": user_content},
+        ]
+        if attempt:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "이전 결과에 영어 단어가 섞였습니다. 모든 분석 항목을 한국어로만 다시 작성하세요.",
+                }
+            )
+        res = client().chat.completions.create(
+            model=CHAT_MODEL,
+            response_format={"type": "json_object"},
+            messages=messages,
+        )
+        try:
+            candidate = json.loads(res.choices[0].message.content)
+        except json.JSONDecodeError:
+            raise HTTPException(502, "페르소나 분석 결과를 해석하지 못했습니다. 다시 시도해주세요.")
+        if not isinstance(candidate, dict):
+            raise HTTPException(502, "페르소나 분석 결과 형식이 올바르지 않습니다.")
+        persona = candidate
+        if not persona_has_unwanted_english(persona):
+            break
 
     def fmt(key: str) -> str:
         items = persona.get(key)

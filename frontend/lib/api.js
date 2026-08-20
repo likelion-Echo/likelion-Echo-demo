@@ -4,10 +4,21 @@
 // 이렇게 두면 192.168.0.71:3000 으로 들어온 사람은 자동으로 192.168.0.71:8000 을 본다.
 const API_PORT = process.env.NEXT_PUBLIC_API_PORT || "8000";
 
+function isLocalHost(hostname) {
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname.startsWith("192.168.") ||
+    hostname.startsWith("10.") ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
+  );
+}
+
 function base() {
   // 배포처럼 백엔드가 다른 도메인에 있으면 이 값으로 덮어쓴다.
   if (process.env.NEXT_PUBLIC_API_BASE) return process.env.NEXT_PUBLIC_API_BASE;
   if (typeof window === "undefined") return `http://localhost:${API_PORT}`;
+  if (!isLocalHost(window.location.hostname)) return "/api";
   return `${window.location.protocol}//${window.location.hostname}:${API_PORT}`;
 }
 
