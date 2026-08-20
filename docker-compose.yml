@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-echo}
       POSTGRES_DB: ${POSTGRES_DB:-echo}
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -43,7 +43,7 @@ services:
       MAX_RELEVANT_DISTANCE: ${MAX_RELEVANT_DISTANCE:-0.70}
       STORAGE_DIR: /app/storage/uploads
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     volumes:
       - backend_storage:/app/storage
     healthcheck:
@@ -69,7 +69,7 @@ services:
       NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-}
       NEXT_PUBLIC_API_PORT: ${NEXT_PUBLIC_API_PORT:-8000}
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
 
 volumes:
   pgdata:
